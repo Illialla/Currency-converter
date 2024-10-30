@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:xml/xml.dart';
 import 'package:http/http.dart' as http;
+import 'package:charset/charset.dart';
 
 void main() {
   runApp(const MyApp());
@@ -34,15 +35,21 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-  var enterAmount = 0;
+  double enterAmount = 0;
   // List<String> currencyNames = ["RUB", "USD", "EUR"];
   List<String> currencyNames = ["None"];
   List<String> currencyNamesFull = [];
-  List<String> currencyValues = [];
+  List<double> currencyValues = [];
   Map<String, String> dictionary = {};
   String dropdownValueIn = 'None';
   String dropdownValueOut = 'None';
+  String convertString = '';
+  String inValue = '';
+  String outValue = '';
+  double inAmount = 0;
+  double outAmount = 0;
+  TextEditingController _inController = TextEditingController();
+  TextEditingController _outController = TextEditingController();
 
   @override
   void initState() {
@@ -60,10 +67,11 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  void _incrementCounter() {
-    setState(() {
-      // fetchCurrencyData();
-    });
+  @override
+  void dispose() {
+    _inController.dispose();
+    _outController.dispose();
+    super.dispose();
   }
 
   Future<void> fetchCurrencyData() async {
@@ -74,27 +82,47 @@ class _MyHomePageState extends State<MyHomePage> {
       // Успешно получили данные
       final document = XmlDocument.parse(response.body);
 
-      // Пример: получить информацию о всех валютах
       final currencies = document.findAllElements('Valute');
 
+      currencyNames.add("RUB");
+      currencyNamesFull.add("Российский рубль");
+      currencyValues.add(1);
+
       for (var currency in currencies) {
-        final charCode = currency.findElements('CharCode').first.text;
+        final charCode = currency.findElements('CharCode').first.innerText;
         currencyNames.add(charCode);
-        final name = currency.findElements('Name').first.text;
+
+        final bytes = currency
+            .findElements('Name')
+            .first
+            .innerText
+            .codeUnits; // Получаем коды символов
+        // Преобразуйте кодовые единицы в байты
+        List<int> windows1251Bytes = bytes;
+        // Декодируем байты Windows-1251 в строку
+        String name = windows1251.decode(windows1251Bytes);
         currencyNamesFull.add(name);
-        final value = currency.findElements('Value').first.text;
-        currencyValues.add(value);
+
+        final value = currency.findElements('Value').first.innerText;
+        currencyValues.add(double.parse(value.replaceAll(',', '.')));
         print('Валюта: $charCode, Название: $name, Стоимость: $value');
       }
-      dictionary = Map.fromIterables(currencyNames, List.generate(currencyNames.length,
-              (index) => currencyNamesFull[index]));
-      print(dictionary);
       setState(() {});
       print(currencyNames);
     } else {
       throw Exception('Не удалось загрузить данные: ${response.statusCode}');
     }
   }
+
+  void makeConvertString(inValue, outValue) {
+    convertString = "Переводим\n${inValue}\nв\n${outValue}";
+  }
+
+  // // Метод для получения полного названия валюты
+  // String getFullCurrencyName(String code) {
+  //   int index = currencyNames.indexOf(code);
+  //   return currencyNamesFull[index];
+  // }
 
   Future<void> fetchCurrencyDataToDropdown() async {
     // Здесь вы подгружаете данные и обновляете currencyNames
@@ -104,11 +132,21 @@ class _MyHomePageState extends State<MyHomePage> {
     if (currencyNames.isNotEmpty) {
       // Устанавливаем dropdownValueOut на первое значение в currencyNames
       dropdownValueIn = currencyNames[0];
-      dropdownValueOut = currencyNames[0];
+      dropdownValueOut = currencyNames[1];
     }
-
+    if (currencyNamesFull.isNotEmpty) {
+      inValue = currencyNamesFull[0];
+      outValue = currencyNamesFull[1];
+    }
+    makeConvertString(inValue, outValue);
     // обновляем состояние
     setState(() {});
+  }
+
+  double convertValue(inAmount, inV, outV) {
+    // currencyNamesFull[currencyNames.indexOf(dropdownValueIn)]
+    outAmount = inAmount / inV * outV;
+    return outAmount;
   }
 
   @override
@@ -118,13 +156,20 @@ class _MyHomePageState extends State<MyHomePage> {
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           title: Text(widget.title),
         ),
-        body: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: <Widget>[
+        body: SingleChildScrollView(
+            child: Column(
+                // mainAxisAlignment: MainAxisAlignment.center,
+                // crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
               Visibility(
                 visible: currencyNames[0] == 'None',
-                child: Center(child: CircularProgressIndicator()),
+                child: Container(
+                    // margin: EdgeInsets.only(top: 100),
+                    height: MediaQuery.of(context)
+                        .size
+                        .height, // Занять всю высоту экрана
+                    width: MediaQuery.of(context).size.width,
+                    child: Center(child: CircularProgressIndicator())),
               ),
               Visibility(
                   visible: currencyNames[0] != 'None',
@@ -133,8 +178,17 @@ class _MyHomePageState extends State<MyHomePage> {
                       // crossAxisAlignment: CrossAxisAlignment.center,
                       children: <Widget>[
                         Container(
+                          margin: EdgeInsets.fromLTRB(0, 60, 0, 70),
+                          child: Text(
+                            convertString,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                fontSize: 23, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                        Container(
                           padding: EdgeInsets.symmetric(vertical: 10),
-                          margin: EdgeInsets.symmetric(horizontal: 50),
+                          margin: EdgeInsets.symmetric(horizontal: 25),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(20),
                             color: Color(0xff62e7d5),
@@ -144,8 +198,9 @@ class _MyHomePageState extends State<MyHomePage> {
                             children: <Widget>[
                               Container(
                                 // margin: EdgeInsets.fromLTRB(0, 50, 0, 50),
-                                width: 100,
+                                width: 150,
                                 child: TextField(
+                                    controller: _inController,
                                     style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.w500),
@@ -153,45 +208,34 @@ class _MyHomePageState extends State<MyHomePage> {
                                     // decoration: InputDecoration(labelText: "Очков для победы"),
                                     keyboardType: TextInputType.number,
                                     onChanged: (value) {
-                                      enterAmount = int.parse(value);
+                                      enterAmount = double.parse(value);
+                                      inAmount = double.parse(
+                                          enterAmount.toStringAsFixed(2));
                                     }),
                               ),
-                              // DropdownButton<String>(
-                              //   value: dropdownValueIn,
-                              //   items: currencyNames.map((String value) {
-                              //     return DropdownMenuItem<String>(
-                              //       value: value,
-                              //       child: Text(
-                              //         value,
-                              //         style: TextStyle(fontSize: 20),
-                              //       ),
-                              //     );
-                              //   }).toList(),
-                              //   onChanged: (String? newValueSelected) {
-                              //     print(dropdownValueIn);
-                              //     setState(() {
-                              //       dropdownValueIn = newValueSelected!;
-                              //     });
-                              //     print(dropdownValueIn);
-                              //   },
-                              // ),
                               DropdownButton<String>(
                                 value: dropdownValueIn,
                                 items: currencyNames.map((String value) {
                                   return DropdownMenuItem<String>(
                                     value: value,
-                                    child: Text(
-                                      value,
-                                      style: TextStyle(fontSize: 20),
+                                    child: Container(
+                                      child: Text(
+                                        value,
+                                        style: TextStyle(
+                                            fontSize: 18),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
                                   );
                                 }).toList(),
+                                style: TextStyle(color: Colors.black),
                                 onChanged: (String? newValueSelected) {
-                                  print(dropdownValueIn);
                                   setState(() {
                                     dropdownValueIn = newValueSelected!;
+                                    inValue = currencyNamesFull[
+                                        currencyNames.indexOf(dropdownValueIn)];
+                                    makeConvertString(inValue, outValue);
                                   });
-                                  print(dropdownValueIn);
                                 },
                               ),
                             ],
@@ -200,13 +244,27 @@ class _MyHomePageState extends State<MyHomePage> {
                         SizedBox(
                           height: 30,
                         ),
-                        Icon(Icons.repeat_outlined, size: 35),
+                        IconButton(
+                          icon: Icon(Icons.repeat_outlined, size: 35),
+                          onPressed: () {
+                            print("inAmount = ${inAmount}");
+                            outAmount = convertValue(
+                                inAmount,
+                                currencyValues[
+                                    currencyNamesFull.indexOf(outValue)],
+                                currencyValues[
+                                    currencyNamesFull.indexOf(inValue)]);
+                            print("Перевели ${inAmount} в ${outAmount}");
+                            _inController.text = inAmount.toStringAsFixed(2);
+                            _outController.text = outAmount.toStringAsFixed(2);
+                          },
+                        ),
                         SizedBox(
                           height: 30,
                         ),
                         Container(
                           padding: EdgeInsets.symmetric(vertical: 10),
-                          margin: EdgeInsets.symmetric(horizontal: 50),
+                          margin: EdgeInsets.symmetric(horizontal: 25),
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(20),
                             color: Color(0xff62e7d5),
@@ -216,51 +274,53 @@ class _MyHomePageState extends State<MyHomePage> {
                             children: <Widget>[
                               Container(
                                 // margin: EdgeInsets.fromLTRB(0, 50, 0, 50),
-                                width: 100,
+                                width: 150,
                                 child: TextField(
+                                    controller: _outController,
+                                    readOnly: true,
                                     style: TextStyle(
                                         fontSize: 20,
                                         fontWeight: FontWeight.w500),
                                     textAlign: TextAlign.center,
-                                    // decoration: InputDecoration(labelText: "Очков для победы"),
                                     keyboardType: TextInputType.number,
                                     onChanged: (value) {
-                                      enterAmount = int.parse(value);
+                                      // enterAmount = double.parse(value);
+                                      _outController.text =
+                                          outAmount.toString();
                                     }),
                               ),
-                              Visibility(
-                                visible: currencyNames[0] != 'None',
-                                child: DropdownButton<String>(
+                              DropdownButton<String>(
                                   value: dropdownValueOut,
+                                  // hint: Text('Select an item'),
                                   items: currencyNames.map((String value) {
                                     return DropdownMenuItem<String>(
                                       value: value,
-                                      child: Text(
-                                        value,
-                                        style: TextStyle(fontSize: 20),
+                                      child: Container(
+                                        // constraints: BoxConstraints(
+                                        //   maxWidth:
+                                        //       150, // Установите нужную максимальную ширину
+                                        // ),
+                                        child: Text(
+                                          value,
+                                          style: TextStyle(
+                                              fontSize: 18),
+                                          // overflow: TextOverflow
+                                          //     .ellipsis, // Добавляем многоточие, если текст слишком длинный
+                                        ),
                                       ),
                                     );
                                   }).toList(),
+                                  // icon: Icon(Icons.arrow_drop_down),
+                                  style: TextStyle(color: Colors.black),
                                   onChanged: (String? newValueSelected) {
-                                    print(dropdownValueOut);
                                     setState(() {
                                       dropdownValueOut = newValueSelected!;
+                                      outValue = currencyNamesFull[currencyNames
+                                          .indexOf(dropdownValueOut)];
+                                      makeConvertString(inValue, outValue);
                                     });
-                                    print(dropdownValueOut);
                                   },
                                 ),
-                              ),
-
-                              // DropdownButton<String>(
-                              //   value: dropdownValueOut,
-                              //   items: currencyNames.map((String value) {
-                              //     return DropdownMenuItem<String>(
-                              //       value: value,
-                              //       child: Text(value, style: TextStyle(fontSize: 20)),
-                              //     );
-                              //   }).toList(),
-                              //   onChanged: (_) {},
-                              // ),
                             ],
                           ),
                         )
@@ -268,7 +328,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     ),
                   )),
             ])
-        // This trailing comma makes auto-formatting nicer for build methods.
-        );
+            // This trailing comma makes auto-formatting nicer for build methods.
+            ));
   }
 }
